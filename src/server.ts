@@ -441,7 +441,7 @@ app.get("/og", async (c: Context) => {
 				"Cache-Control",
 				`public, max-age=${cache_ttl}, s-maxage=${cache_ttl}`
 			);
-			c.header("Content-Type", "image/png");
+			c.header("Content-Type", "image/jpeg");
 			c.header("Content-Length", cached_result.buffer.length.toString());
 			c.header("X-Cache-Key", cache_key);
 			c.header("X-Cache-Status", `HIT-${cached_result.source.toUpperCase()}`);
@@ -465,7 +465,7 @@ app.get("/og", async (c: Context) => {
 			"Cache-Control",
 			`public, max-age=${cache_ttl}, s-maxage=${cache_ttl}`
 		);
-		c.header("Content-Type", "image/png");
+		c.header("Content-Type", "image/jpeg");
 		c.header("X-Cache-Key", cache_key);
 		c.header("X-Cache-Status", "MISS");
 		c.header("X-Authorized", authorized.toString());
@@ -486,8 +486,9 @@ app.get("/og", async (c: Context) => {
 			{
 				width: 1200,
 				height: 630,
-				device_scale_factor: 2,
-				format: "png",
+				device_scale_factor: 1,
+				format: "jpeg",
+				quality: 85,
 			}
 		);
 
