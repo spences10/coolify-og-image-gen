@@ -1,11 +1,11 @@
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 import { Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
 import { og_params } from "./types/og-params";
 import { image_generator } from "./utils/image-generator";
 import { template_renderer } from "./utils/template-renderer";
@@ -34,29 +34,46 @@ interface RamCacheEntry {
 // Function to check if request is from allowed origin
 function is_authorized_origin(c: Context): boolean {
 	const referer = c.req.header("referer");
-	
+
 	// Allow direct access (no referer) and development mode
 	if (!referer || process.env.NODE_ENV !== "production") {
 		return true;
 	}
-	
+
 	// Check allowed origins from environment
 	const allowed_origins = process.env.ALLOWED_ORIGINS?.split(",") || [];
-	return allowed_origins.some(origin => referer.startsWith(origin.trim()));
+	return allowed_origins.some((origin) => referer.startsWith(origin.trim()));
 }
 
 // Enhanced logging function
-function log_request(c: Context, cache_status: string, response_time: number, cache_key: string, authorized: boolean) {
-	const client_ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+function log_request(
+	c: Context,
+	cache_status: string,
+	response_time: number,
+	cache_key: string,
+	authorized: boolean
+) {
+	const client_ip =
+		c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
 	const user_agent = c.req.header("user-agent") || "unknown";
 	const referer = c.req.header("referer") || "direct";
 	const auth_status = authorized ? "✅ AUTHORIZED" : "❌ UNAUTHORIZED";
-	
-	console.log(`📊 ${cache_status} | ${response_time}ms | ${auth_status} | ${client_ip} | ${referer} | ${user_agent.substring(0, 100)}`);
-	
+
+	console.log(
+		`📊 ${cache_status} | ${response_time}ms | ${auth_status} | ${client_ip} | ${referer} | ${user_agent.substring(
+			0,
+			100
+		)}`
+	);
+
 	// Log potential abuse patterns
 	if (!authorized) {
-		console.log(`🚨 POTENTIAL ABUSE: ${client_ip} | ${referer} | ${user_agent.substring(0, 50)}`);
+		console.log(
+			`🚨 POTENTIAL ABUSE: ${client_ip} | ${referer} | ${user_agent.substring(
+				0,
+				50
+			)}`
+		);
 	}
 }
 
@@ -167,7 +184,11 @@ async function get_cached_image(
 	return null;
 }
 
-async function cache_image(cache_key: string, buffer: Buffer, authorized: boolean = true): Promise<void> {
+async function cache_image(
+	cache_key: string,
+	buffer: Buffer,
+	authorized: boolean = true
+): Promise<void> {
 	const timestamp = Date.now();
 	const ttl = authorized ? CACHE_TTL : SHORT_CACHE_TTL;
 
@@ -195,7 +216,10 @@ app.use(
 // Enhanced rate limiting with Upstash Redis
 let ratelimit: Ratelimit | null = null;
 
-if (process.env.NODE_ENV === "production" && process.env.UPSTASH_REDIS_REST_URL) {
+if (
+	process.env.NODE_ENV === "production" &&
+	process.env.UPSTASH_REDIS_REST_URL
+) {
 	const redis = new Redis({
 		url: process.env.UPSTASH_REDIS_REST_URL,
 		token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -214,7 +238,9 @@ if (process.env.NODE_ENV === "production" && process.env.UPSTASH_REDIS_REST_URL)
 	app.use("/og", async (c: Context, next) => {
 		const client_ip =
 			c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
-		const { success, limit, remaining, reset } = await ratelimit!.limit(client_ip);
+		const { success, limit, remaining, reset } = await ratelimit!.limit(
+			client_ip
+		);
 
 		if (!success) {
 			return c.json(
@@ -364,11 +390,32 @@ app.get("/preview", async (c: Context) => {
 	}
 });
 
+// Function to decode HTML entities in query parameters
+function decode_html_entities(
+	query: Record<string, string | undefined>
+): Record<string, string | undefined> {
+	const decoded: Record<string, string | undefined> = {};
+	for (const [key, value] of Object.entries(query)) {
+		if (typeof value === "string") {
+			decoded[key] = value
+				.replace(/&amp;/g, "&")
+				.replace(/&lt;/g, "<")
+				.replace(/&gt;/g, ">")
+				.replace(/&quot;/g, '"')
+				.replace(/&#39;/g, "'");
+		} else {
+			decoded[key] = value;
+		}
+	}
+	return decoded;
+}
+
 app.get("/og", async (c: Context) => {
 	const start_time = Date.now();
 	try {
-		// Get query parameters
-		const query = c.req.query();
+		// Get and decode query parameters (handle HTML entities from meta tags)
+		const raw_query = c.req.query();
+		const query = decode_html_entities(raw_query);
 
 		// Validate parameters
 		const validation = validate_og_params(query);
@@ -402,7 +449,13 @@ app.get("/og", async (c: Context) => {
 			c.header("ETag", `"${cache_key.replace(/[^a-zA-Z0-9]/g, "")}"`);
 
 			const response_time = Date.now() - start_time;
-			log_request(c, `✅ Cache hit (${cached_result.source})`, response_time, cache_key, authorized);
+			log_request(
+				c,
+				`✅ Cache hit (${cached_result.source})`,
+				response_time,
+				cache_key,
+				authorized
+			);
 			return c.body(cached_result.buffer);
 		}
 
