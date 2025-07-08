@@ -4,6 +4,8 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 import { og_params } from "./types/og-params";
 import { image_generator } from "./utils/image-generator";
 import { template_renderer } from "./utils/template-renderer";
@@ -20,11 +22,42 @@ const CACHE_DIR = join(process.cwd(), "cache");
 const CACHE_TTL = Number(process.env.DEFAULT_CACHE_TTL) || 86400; // 24 hours in seconds
 const HTTP_CACHE_TTL = Number(process.env.HTTP_CACHE_TTL) || 86400; // 24 hours for browsers/CDNs
 const MAX_RAM_CACHE_SIZE = Number(process.env.IMAGE_CACHE_MAX_SIZE) || 100;
+const SHORT_CACHE_TTL = Number(process.env.SHORT_CACHE_TTL) || 300; // 5 minutes for unauthorized requests
 
 // RAM cache (hot - most recently accessed)
 interface RamCacheEntry {
 	buffer: Buffer;
 	timestamp: number;
+	ttl: number; // Time to live in seconds
+}
+
+// Function to check if request is from allowed origin
+function is_authorized_origin(c: Context): boolean {
+	const referer = c.req.header("referer");
+	
+	// Allow direct access (no referer) and development mode
+	if (!referer || process.env.NODE_ENV !== "production") {
+		return true;
+	}
+	
+	// Check allowed origins from environment
+	const allowed_origins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+	return allowed_origins.some(origin => referer.startsWith(origin.trim()));
+}
+
+// Enhanced logging function
+function log_request(c: Context, cache_status: string, response_time: number, cache_key: string, authorized: boolean) {
+	const client_ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+	const user_agent = c.req.header("user-agent") || "unknown";
+	const referer = c.req.header("referer") || "direct";
+	const auth_status = authorized ? "✅ AUTHORIZED" : "❌ UNAUTHORIZED";
+	
+	console.log(`📊 ${cache_status} | ${response_time}ms | ${auth_status} | ${client_ip} | ${referer} | ${user_agent.substring(0, 100)}`);
+	
+	// Log potential abuse patterns
+	if (!authorized) {
+		console.log(`🚨 POTENTIAL ABUSE: ${client_ip} | ${referer} | ${user_agent.substring(0, 50)}`);
+	}
 }
 
 const ram_cache = new Map<string, RamCacheEntry>();
@@ -45,9 +78,9 @@ ensure_cache_dir().catch(console.error);
 function cleanup_cache() {
 	const now = Date.now();
 
-	// Clean up RAM cache - remove expired entries
+	// Clean up RAM cache - remove expired entries based on individual TTL
 	for (const [key, entry] of ram_cache.entries()) {
-		if (now - entry.timestamp > CACHE_TTL * 1000) {
+		if (now - entry.timestamp > entry.ttl * 1000) {
 			ram_cache.delete(key);
 		}
 	}
@@ -112,20 +145,21 @@ async function get_cached_image(
 	const ram_entry = ram_cache.get(cache_key);
 	if (ram_entry) {
 		const age = Date.now() - ram_entry.timestamp;
-		if (age < CACHE_TTL * 1000) {
+		if (age < ram_entry.ttl * 1000) {
 			return { buffer: ram_entry.buffer, source: "ram" };
 		} else {
 			ram_cache.delete(cache_key);
 		}
 	}
 
-	// Check disk cache (warm)
+	// Check disk cache (warm) - only for authorized requests (longer TTL)
 	const disk_buffer = await get_from_disk_cache(cache_key);
 	if (disk_buffer) {
-		// Promote to RAM cache
+		// Promote to RAM cache with standard TTL
 		ram_cache.set(cache_key, {
 			buffer: disk_buffer,
 			timestamp: Date.now(),
+			ttl: CACHE_TTL,
 		});
 		return { buffer: disk_buffer, source: "disk" };
 	}
@@ -133,14 +167,17 @@ async function get_cached_image(
 	return null;
 }
 
-async function cache_image(cache_key: string, buffer: Buffer): Promise<void> {
+async function cache_image(cache_key: string, buffer: Buffer, authorized: boolean = true): Promise<void> {
 	const timestamp = Date.now();
+	const ttl = authorized ? CACHE_TTL : SHORT_CACHE_TTL;
 
-	// Save to RAM cache
-	ram_cache.set(cache_key, { buffer, timestamp });
+	// Save to RAM cache with appropriate TTL
+	ram_cache.set(cache_key, { buffer, timestamp, ttl });
 
-	// Save to disk cache (async, don't wait)
-	save_to_disk_cache(cache_key, buffer).catch(console.error);
+	// Only save to disk cache if authorized (long-term caching)
+	if (authorized) {
+		save_to_disk_cache(cache_key, buffer).catch(console.error);
+	}
 }
 
 // Middleware
@@ -149,31 +186,64 @@ app.use("*", secureHeaders());
 app.use(
 	"*",
 	cors({
-		origin:
-			process.env.NODE_ENV === "production"
-				? process.env.ALLOWED_ORIGINS?.split(",") || [
-						"https://scottspence.com",
-						"https://www.scottspence.com",
-				  ]
-				: "*",
+		origin: "*", // Allow all origins - access control handled via caching strategy
 		allowMethods: ["GET"],
 		allowHeaders: ["Content-Type"],
 	})
 );
 
-// Simple rate limiting for production (can be enhanced later)
-if (process.env.NODE_ENV === "production") {
+// Enhanced rate limiting with Upstash Redis
+let ratelimit: Ratelimit | null = null;
+
+if (process.env.NODE_ENV === "production" && process.env.UPSTASH_REDIS_REST_URL) {
+	const redis = new Redis({
+		url: process.env.UPSTASH_REDIS_REST_URL,
+		token: process.env.UPSTASH_REDIS_REST_TOKEN,
+	});
+
+	ratelimit = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(
+			Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
+			`${Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000}ms`
+		),
+		analytics: true,
+		prefix: "og-image-gen",
+	});
+
+	app.use("/og", async (c: Context, next) => {
+		const client_ip =
+			c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+		const { success, limit, remaining, reset } = await ratelimit!.limit(client_ip);
+
+		if (!success) {
+			return c.json(
+				{
+					error: "Too many requests",
+					limit,
+					remaining,
+					reset,
+					retry_after: Math.ceil((reset - Date.now()) / 1000),
+				},
+				429
+			);
+		}
+
+		return next();
+	});
+} else {
+	// Fallback to simple rate limiting if Upstash not configured
 	const request_counts = new Map<
 		string,
 		{ count: number; reset_time: number }
 	>();
 
-	app.use("*", async (c: Context, next) => {
+	app.use("/og", async (c: Context, next) => {
 		const client_ip =
 			c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
 		const now = Date.now();
-		const window_ms = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60 * 1000; // 1 minute
-		const max_requests = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60; // 60 requests per minute
+		const window_ms = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60 * 1000;
+		const max_requests = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60;
 
 		const client_data = request_counts.get(client_ip);
 
@@ -311,36 +381,41 @@ app.get("/og", async (c: Context) => {
 		// Generate cache key
 		const cache_key = `${params.title}-${params.author}-${params.website}-${params.theme}`;
 
+		// Check if request is from authorized origin
+		const authorized = is_authorized_origin(c);
+
 		// Check hybrid cache (RAM -> Disk -> Generate)
 		const cached_result = await get_cached_image(cache_key);
 
 		if (cached_result) {
-			// Set cache headers
+			// Set cache headers based on authorization
+			const cache_ttl = authorized ? HTTP_CACHE_TTL : SHORT_CACHE_TTL;
 			c.header(
 				"Cache-Control",
-				`public, max-age=${HTTP_CACHE_TTL}, s-maxage=${HTTP_CACHE_TTL}`
+				`public, max-age=${cache_ttl}, s-maxage=${cache_ttl}`
 			);
 			c.header("Content-Type", "image/png");
 			c.header("Content-Length", cached_result.buffer.length.toString());
 			c.header("X-Cache-Key", cache_key);
 			c.header("X-Cache-Status", `HIT-${cached_result.source.toUpperCase()}`);
+			c.header("X-Authorized", authorized.toString());
 			c.header("ETag", `"${cache_key.replace(/[^a-zA-Z0-9]/g, "")}"`);
 
 			const response_time = Date.now() - start_time;
-			console.log(
-				`✅ Cache hit (${cached_result.source}): ${cache_key} - ${response_time}ms`
-			);
+			log_request(c, `✅ Cache hit (${cached_result.source})`, response_time, cache_key, authorized);
 			return c.body(cached_result.buffer);
 		}
 
-		// Set cache headers
+		// Set cache headers based on authorization
+		const cache_ttl = authorized ? HTTP_CACHE_TTL : SHORT_CACHE_TTL;
 		c.header(
 			"Cache-Control",
-			`public, max-age=${HTTP_CACHE_TTL}, s-maxage=${HTTP_CACHE_TTL}`
+			`public, max-age=${cache_ttl}, s-maxage=${cache_ttl}`
 		);
 		c.header("Content-Type", "image/png");
 		c.header("X-Cache-Key", cache_key);
 		c.header("X-Cache-Status", "MISS");
+		c.header("X-Authorized", authorized.toString());
 		c.header("ETag", `"${cache_key.replace(/[^a-zA-Z0-9]/g, "")}"`);
 		c.header("Last-Modified", new Date().toUTCString());
 
@@ -363,11 +438,11 @@ app.get("/og", async (c: Context) => {
 			}
 		);
 
-		// Cache the generated image (both RAM and disk)
-		await cache_image(cache_key, image_buffer);
+		// Cache the generated image with authorization-based TTL
+		await cache_image(cache_key, image_buffer, authorized);
 
 		const response_time = Date.now() - start_time;
-		console.log(`🔄 Generated fresh: ${cache_key} - ${response_time}ms`);
+		log_request(c, `🔄 Generated fresh`, response_time, cache_key, authorized);
 		return c.body(image_buffer);
 	} catch (error) {
 		console.error("Error generating OG image:", error);
