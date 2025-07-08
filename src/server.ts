@@ -121,12 +121,25 @@ setInterval(cleanup_cache, 2 * 60 * 60 * 1000);
 // Hybrid cache functions
 async function get_from_disk_cache(cache_key: string): Promise<Buffer | null> {
 	try {
-		const file_path = join(
-			CACHE_DIR,
-			`${cache_key.replace(/[^a-zA-Z0-9\-_]/g, "_")}.png`
-		);
+		// Try JPEG first (new format), then PNG (legacy)
+		const base_name = cache_key.replace(/[^a-zA-Z0-9\-_]/g, "_");
+		let file_path = join(CACHE_DIR, `${base_name}.jpg`);
+		
+		// Check if JPEG exists first
+		try {
+			const stats = await fs.stat(file_path);
+			const age = Date.now() - stats.mtime.getTime();
+			if (age <= CACHE_TTL * 1000) {
+				return await fs.readFile(file_path);
+			} else {
+				await fs.unlink(file_path).catch(() => {});
+			}
+		} catch {
+			// JPEG doesn't exist, try PNG (legacy)
+			file_path = join(CACHE_DIR, `${base_name}.png`);
+		}
+		
 		const stats = await fs.stat(file_path);
-
 		// Check if file is expired
 		const age = Date.now() - stats.mtime.getTime();
 		if (age > CACHE_TTL * 1000) {
@@ -147,7 +160,7 @@ async function save_to_disk_cache(
 	try {
 		const file_path = join(
 			CACHE_DIR,
-			`${cache_key.replace(/[^a-zA-Z0-9\-_]/g, "_")}.png`
+			`${cache_key.replace(/[^a-zA-Z0-9\-_]/g, "_")}.jpg`
 		);
 		await fs.writeFile(file_path, buffer);
 	} catch (error) {
@@ -544,9 +557,9 @@ app.delete("/cache", require_auth, async (c: Context) => {
 	let disk_cleared = 0;
 	try {
 		const files = await fs.readdir(CACHE_DIR);
-		const png_files = files.filter((f) => f.endsWith(".png"));
-		await Promise.all(png_files.map((f) => fs.unlink(join(CACHE_DIR, f))));
-		disk_cleared = png_files.length;
+		const image_files = files.filter((f) => f.endsWith(".png") || f.endsWith(".jpg") || f.endsWith(".jpeg"));
+		await Promise.all(image_files.map((f) => fs.unlink(join(CACHE_DIR, f))));
+		disk_cleared = image_files.length;
 	} catch (error) {
 		console.error("Error clearing disk cache:", error);
 	}
@@ -597,7 +610,7 @@ app.get("/cache", async (c: Context) => {
 	try {
 		const files = await fs.readdir(CACHE_DIR);
 		disk_entries = files
-			.filter((f) => f.endsWith(".png"))
+			.filter((f) => f.endsWith(".png") || f.endsWith(".jpg") || f.endsWith(".jpeg"))
 			.map((f) => f.replace(".png", ""));
 	} catch {
 		// Directory might not exist yet
@@ -658,8 +671,32 @@ async function pre_warm_cache() {
 		for (const params of images_to_warm) {
 			const cache_key = `${params.title}-${params.author}-${params.website}-${params.theme}`;
 			const cached = await get_cached_image(cache_key);
-			if (cached && cached.source === "disk") {
-				console.log(`✅ Pre-warmed RAM: ${params.title}`);
+			if (cached) {
+				console.log(`✅ Pre-warmed (${cached.source}): ${params.title}`);
+			} else {
+				// Generate and cache the image if it doesn't exist
+				try {
+					const html_content = template_renderer_instance.render_template("default", {
+						title: params.title,
+						author: params.author,
+						website: params.website,
+						theme: params.theme,
+					});
+					const image_buffer = await image_generator_instance.generate_image(
+						html_content,
+						{
+							width: 1200,
+							height: 630,
+							device_scale_factor: 1,
+							format: "jpeg",
+							quality: 85,
+						}
+					);
+					await cache_image(cache_key, image_buffer, true);
+					console.log(`🔥 Generated and cached: ${params.title}`);
+				} catch (error) {
+					console.error(`❌ Failed to pre-warm ${params.title}:`, error);
+				}
 			}
 		}
 
