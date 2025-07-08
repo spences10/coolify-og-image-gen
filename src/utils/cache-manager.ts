@@ -5,7 +5,8 @@ import { join } from "node:path";
 export const CACHE_DIR = join(process.cwd(), "cache");
 export const CACHE_TTL = Number(process.env.DEFAULT_CACHE_TTL) || 86400; // 24 hours in seconds
 export const HTTP_CACHE_TTL = Number(process.env.HTTP_CACHE_TTL) || 86400; // 24 hours for browsers/CDNs
-export const MAX_RAM_CACHE_SIZE = Number(process.env.IMAGE_CACHE_MAX_SIZE) || 100;
+export const MAX_RAM_CACHE_SIZE =
+	Number(process.env.IMAGE_CACHE_MAX_SIZE) || 100;
 export const SHORT_CACHE_TTL = Number(process.env.SHORT_CACHE_TTL) || 300; // 5 minutes for unauthorized requests
 
 // RAM cache (hot - most recently accessed)
@@ -51,12 +52,14 @@ export function cleanup_cache() {
 }
 
 // Hybrid cache functions
-export async function get_from_disk_cache(cache_key: string): Promise<Buffer | null> {
+export async function get_from_disk_cache(
+	cache_key: string
+): Promise<Buffer | null> {
 	try {
 		// Try JPEG first (new format), then PNG (legacy)
 		const base_name = cache_key.replace(/[^a-zA-Z0-9\-_]/g, "_");
 		let file_path = join(CACHE_DIR, `${base_name}.jpg`);
-		
+
 		// Check if JPEG exists first
 		try {
 			const stats = await fs.stat(file_path);
@@ -70,7 +73,7 @@ export async function get_from_disk_cache(cache_key: string): Promise<Buffer | n
 			// JPEG doesn't exist, try PNG (legacy)
 			file_path = join(CACHE_DIR, `${base_name}.png`);
 		}
-		
+
 		const stats = await fs.stat(file_path);
 		// Check if file is expired
 		const age = Date.now() - stats.mtime.getTime();
@@ -129,7 +132,11 @@ export async function get_cached_image(
 	return null;
 }
 
-export async function cache_image(cache_key: string, buffer: Buffer, authorized: boolean = true): Promise<void> {
+export async function cache_image(
+	cache_key: string,
+	buffer: Buffer,
+	authorized: boolean = true
+): Promise<void> {
 	const timestamp = Date.now();
 	const ttl = authorized ? CACHE_TTL : SHORT_CACHE_TTL;
 

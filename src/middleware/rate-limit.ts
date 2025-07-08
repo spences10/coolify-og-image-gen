@@ -1,12 +1,15 @@
-import { Context } from "hono";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { Context } from "hono";
 
 export let ratelimit: Ratelimit | null = null;
 
 // Initialize rate limiting
 export function setup_rate_limiting() {
-	if (process.env.NODE_ENV === "production" && process.env.UPSTASH_REDIS_REST_URL) {
+	if (
+		process.env.NODE_ENV === "production" &&
+		process.env.UPSTASH_REDIS_REST_URL
+	) {
 		const redis = new Redis({
 			url: process.env.UPSTASH_REDIS_REST_URL,
 			token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -25,12 +28,16 @@ export function setup_rate_limiting() {
 }
 
 // Rate limit middleware for Upstash Redis
-export async function upstash_rate_limit_middleware(c: Context, next: Function) {
+export async function upstash_rate_limit_middleware(
+	c: Context,
+	next: Function
+) {
 	if (!ratelimit) {
 		return next();
 	}
 
-	const client_ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+	const client_ip =
+		c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
 	const { success, limit, remaining, reset } = await ratelimit.limit(client_ip);
 
 	if (!success) {
@@ -52,8 +59,12 @@ export async function upstash_rate_limit_middleware(c: Context, next: Function) 
 // Fallback in-memory rate limiting
 const request_counts = new Map<string, { count: number; reset_time: number }>();
 
-export async function fallback_rate_limit_middleware(c: Context, next: Function) {
-	const client_ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+export async function fallback_rate_limit_middleware(
+	c: Context,
+	next: Function
+) {
+	const client_ip =
+		c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
 	const now = Date.now();
 	const window_ms = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60 * 1000;
 	const max_requests = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60;

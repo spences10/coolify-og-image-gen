@@ -1,18 +1,23 @@
+import { serve } from "@hono/node-server";
 import { Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { serve } from "@hono/node-server";
 
 // Import our modules
-import { ram_cache, MAX_RAM_CACHE_SIZE } from "./utils/cache-manager";
-import { setup_rate_limiting, upstash_rate_limit_middleware, fallback_rate_limit_middleware, ratelimit } from "./middleware/rate-limit";
-import { pre_warm_cache } from "./utils/pre-warm-cache";
-import { og_routes } from "./routes/og-routes";
+import {
+	fallback_rate_limit_middleware,
+	ratelimit,
+	setup_rate_limiting,
+	upstash_rate_limit_middleware,
+} from "./middleware/rate-limit";
 import { cache_routes } from "./routes/cache-routes";
+import { og_routes } from "./routes/og-routes";
+import { MAX_RAM_CACHE_SIZE, ram_cache } from "./utils/cache-manager";
 import { image_generator } from "./utils/image-generator";
+import { pre_warm_cache } from "./utils/pre-warm-cache";
 
 const app = new Hono();
 const image_generator_instance = new image_generator();

@@ -3,12 +3,12 @@ import { Context } from "hono";
 // Function to check if request is from allowed origin
 export function is_authorized_origin(c: Context): boolean {
 	const referer = c.req.header("referer");
-	
+
 	// Allow direct access (no referer) and development mode
 	if (!referer || process.env.NODE_ENV !== "production") {
 		return true;
 	}
-	
+
 	// Check allowed origins from environment
 	const allowed_origins = process.env.ALLOWED_ORIGINS?.split(",") || [];
 	return allowed_origins.some((origin) => referer.startsWith(origin.trim()));
@@ -47,7 +47,9 @@ export function log_request(
 }
 
 // Function to decode HTML entities in query parameters
-export function decode_html_entities(query: Record<string, string | undefined>): Record<string, string | undefined> {
+export function decode_html_entities(
+	query: Record<string, string | undefined>
+): Record<string, string | undefined> {
 	const decoded: Record<string, string | undefined> = {};
 	for (const [key, value] of Object.entries(query)) {
 		if (typeof value === "string") {

@@ -1,6 +1,6 @@
-import { get_cached_image, cache_image } from "./cache-manager";
-import { template_renderer } from "./template-renderer";
+import { cache_image, get_cached_image } from "./cache-manager";
 import { image_generator } from "./image-generator";
+import { template_renderer } from "./template-renderer";
 
 // Pre-warm cache with popular posts
 export async function pre_warm_cache() {
@@ -46,12 +46,15 @@ export async function pre_warm_cache() {
 			} else {
 				// Generate and cache the image if it doesn't exist
 				try {
-					const html_content = template_renderer_instance.render_template("default", {
-						title: params.title,
-						author: params.author,
-						website: params.website,
-						theme: params.theme,
-					});
+					const html_content = template_renderer_instance.render_template(
+						"default",
+						{
+							title: params.title,
+							author: params.author,
+							website: params.website,
+							theme: params.theme,
+						}
+					);
 					const image_buffer = await image_generator_instance.generate_image(
 						html_content,
 						{

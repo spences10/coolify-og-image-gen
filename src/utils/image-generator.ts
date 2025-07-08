@@ -23,9 +23,7 @@ export class image_generator {
 				],
 			};
 
-			console.log(
-				"Launching Playwright Chromium browser from image..."
-			);
+			console.log("Launching Playwright Chromium browser from image...");
 			browser = await chromium.launch(launch_options);
 			const page = await browser.newPage();
 

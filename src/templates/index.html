@@ -1,57 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coolify OG Image Generator</title>
-    
-    <!-- Open Graph Meta Tags -->
-    <meta property="og:title" content="Coolify OG Image Generator">
-    <meta property="og:description" content="Generate beautiful Open Graph images for your content with custom titles, authors, and themes.">
-    <meta property="og:image" content="{{OG_IMAGE_URL}}">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">
-    <meta property="og:url" content="{{BASE_URL}}">
-    <meta property="og:type" content="website">
-    
-    <!-- Twitter Card Meta Tags -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Coolify OG Image Generator">
-    <meta name="twitter:description" content="Generate beautiful Open Graph images for your content with custom titles, authors, and themes.">
-    <meta name="twitter:image" content="{{OG_IMAGE_URL}}">
-    
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        h1 { color: #333; }
-        .api-info { background: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0; }
-        code { background: #e8e8e8; padding: 2px 4px; border-radius: 3px; }
-    </style>
-</head>
-<body>
-    <h1>🖼️ Coolify OG Image Generator</h1>
-    <p>Generate beautiful Open Graph images for your content with custom titles, authors, and themes.</p>
-    
-    <div class="api-info">
-        <h2>API Usage</h2>
-        <p>Generate OG images by calling:</p>
-        <code>GET /og?title=Your%20Title&author=Author&website=example.com&theme=light</code>
-        
-        <h3>Parameters:</h3>
-        <ul>
-            <li><strong>title</strong> - Required. Main title text (max 200 chars)</li>
-            <li><strong>author</strong> - Optional. Author name (max 100 chars, default: Anonymous)</li>
-            <li><strong>website</strong> - Optional. Website domain (max 100 chars, default: example.com)</li>
-            <li><strong>theme</strong> - Optional. Color theme: light or dark (default: light)</li>
-        </ul>
-        
-        <h3>Test the OG Image:</h3>
-        <p><a href="{{OG_IMAGE_URL}}" target="_blank">View Demo OG Image</a></p>
-    </div>
-    
-    <h2>Other Endpoints</h2>
-    <ul>
-        <li><a href="/health">Health Check</a></li>
-        <li><a href="/cache">Cache Status</a></li>
-    </ul>
-</body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Coolify OG Image Generator</title>
+
+		<!-- Open Graph Meta Tags -->
+		<meta property="og:title" content="Coolify OG Image Generator" />
+		<meta
+			property="og:description"
+			content="Generate beautiful Open Graph images for your content with custom titles, authors, and themes."
+		/>
+		<meta property="og:image" content="{{OG_IMAGE_URL}}" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:url" content="{{BASE_URL}}" />
+		<meta property="og:type" content="website" />
+
+		<!-- Twitter Card Meta Tags -->
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="Coolify OG Image Generator" />
+		<meta
+			name="twitter:description"
+			content="Generate beautiful Open Graph images for your content with custom titles, authors, and themes."
+		/>
+		<meta name="twitter:image" content="{{OG_IMAGE_URL}}" />
+
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			h1 {
+				color: #333;
+			}
+			.api-info {
+				background: #f5f5f5;
+				padding: 20px;
+				border-radius: 5px;
+				margin: 20px 0;
+			}
+			code {
+				background: #e8e8e8;
+				padding: 2px 4px;
+				border-radius: 3px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>🖼️ Coolify OG Image Generator</h1>
+		<p>
+			Generate beautiful Open Graph images for your content with custom titles,
+			authors, and themes.
+		</p>
+
+		<div class="api-info">
+			<h2>API Usage</h2>
+			<p>Generate OG images by calling:</p>
+			<code
+				>GET
+				/og?title=Your%20Title&author=Author&website=example.com&theme=light</code
+			>
+
+			<h3>Parameters:</h3>
+			<ul>
+				<li>
+					<strong>title</strong> - Required. Main title text (max 200 chars)
+				</li>
+				<li>
+					<strong>author</strong> - Optional. Author name (max 100 chars,
+					default: Anonymous)
+				</li>
+				<li>
+					<strong>website</strong> - Optional. Website domain (max 100 chars,
+					default: example.com)
+				</li>
+				<li>
+					<strong>theme</strong> - Optional. Color theme: light or dark
+					(default: light)
+				</li>
+			</ul>
+
+			<h3>Test the OG Image:</h3>
+			<p><a href="{{OG_IMAGE_URL}}" target="_blank">View Demo OG Image</a></p>
+		</div>
+
+		<h2>Other Endpoints</h2>
+		<ul>
+			<li><a href="/health">Health Check</a></li>
+			<li><a href="/cache">Cache Status</a></li>
+		</ul>
+	</body>
 </html>
